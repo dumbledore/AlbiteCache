@@ -35,8 +35,11 @@ public class MemCacheVisualTest extends JFrame {
     {
         super("Visual Cache");
 
-        Rect cacheDimensions = new Rect(50, 50, 100, 400);
-        cache = new VisualMemCache(null, 200, 256, 500, 1000, cacheDimensions, this);
+        Rect subCacheDimensions = new Rect(300, 80, 100, 400);
+        VisualMemCache subCache = new VisualMemCache(null, 200, 256, 500, 1000, subCacheDimensions, "Back Cache (256)", this);
+
+        Rect cacheDimensions = new Rect(50, 80, 100, 400);
+        cache = new VisualMemCache(subCache, 200, 256, 500, 1000, cacheDimensions, "Main Cache (80)", this);
 
         WindowAdapter window =
                 new WindowAdapter() {
@@ -53,10 +56,22 @@ public class MemCacheVisualTest extends JFrame {
     }
 
     @Override
-    public synchronized void paint(Graphics g) {
+    public void paint(Graphics g) {
+        final int width = getWidth();
+        final int height = getHeight();
+        final int cacheY = cache.dimensions.y;
+        final int cacheHeight = cache.dimensions.height;
+
         g.setColor(Color.WHITE);
-        g.fillRect(0, 0, getWidth(), getHeight());
+        g.fillRect(0, cacheY, width, cacheHeight);
+
         cache.paint(g);
+
+        g.setColor(Color.DARK_GRAY);
+        g.fillRect(0, 0, width, cacheY);
+        g.fillRect(0, cacheY + cacheHeight, width, height - cacheHeight);
+
+        cache.paintSecondLayer(g);
     }
 
     private void run() throws IOException, CacheException {
