@@ -45,7 +45,7 @@ public class MemCache extends Cache {
         return new MemCacheItem(key, value);
     }
 
-    class MemCacheItem extends CacheItem {
+    private class MemCacheItem extends CacheItem {
         Cacheable value;
 
         MemCacheItem(final Object key, final Cacheable value) {
