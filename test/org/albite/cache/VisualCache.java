@@ -21,11 +21,13 @@ public class VisualCache extends MRUCache {
     public final String cacheLabel;
     private final Component repaintMaster;
     private Color allItemsColor = null;
-    private long currentTime;
 
     private int localHits = 0;
     private int globalHits = 0;
     private int lookups = 0;
+
+    private boolean connectToSubcache = false;
+    private Color connectToSubcacheColor = COLOR_CONNECTIONS;
     
     String stateLabel = "";
 
@@ -41,6 +43,7 @@ public class VisualCache extends MRUCache {
     public static final Color COLOR_LINE_PHYSICAL_CAPACITY = Color.BLACK;
     public static final Color COLOR_LINE_TARGETED_CAPACITY = Color.BLUE;
     public static final Color COLOR_LINE_REMOVE_UNTIL = Color.RED;
+    public static final Color COLOR_CONNECTIONS = Color.BLACK;
 
     private volatile int waitTime = 100;
 
@@ -166,9 +169,12 @@ public class VisualCache extends MRUCache {
             item.color = COLOR_INVALIDATED;
             repaint();
 
+            connectToSubcache = true;
+            connectToSubcacheColor = COLOR_INVALIDATED;
             translate((VisualCacheItem) item.next, 0, item.box.height);
             super.invalidate(key);
             returnToNormal();
+            connectToSubcache = false;
         }
     }
 
@@ -180,18 +186,30 @@ public class VisualCache extends MRUCache {
         allItemsColor = COLOR_INVALIDATED;
         repaint();
 
+        connectToSubcache = true;
+        connectToSubcacheColor = COLOR_INVALIDATED;
         super.invalidate();
         returnToNormal();
+        connectToSubcache = false;
     }
 
     @Override
     protected Cacheable searchInternalCache(Object key) {
         if (subCache != null) {
+            connectToSubcache = true;
+            connectToSubcacheColor = COLOR_MISS;
             stateLabel = "Deep Searching...";
             repaint();
 
             Cacheable result = super.searchInternalCache(key);
+            if (result != null) {
+                connectToSubcacheColor = COLOR_FOUND_ITEM;
+                stateLabel = "Found in back cache";
+                repaint();
+            }
+
             returnToNormal();
+            connectToSubcache = false;
             return result;
         }
 
@@ -262,8 +280,16 @@ public class VisualCache extends MRUCache {
         removed.color = COLOR_REMOVED;
         repaint();
 
+        connectToSubcache = true;
+        connectToSubcacheColor = COLOR_REMOVED;
+        repaint();
+
+        connectToSubcacheColor = COLOR_JUST_ADDED;
         boolean result = super.remove(item);
+        tail = item.previous;
         returnToNormal();
+
+        connectToSubcache = false;
         return result;
     }
 
@@ -273,8 +299,40 @@ public class VisualCache extends MRUCache {
     public void paint(Graphics g) {
         if (subCache != null) {
             ((VisualCache) subCache).paint(g);
+            paintConnection(g);
         }
 
+        paintLines(g);
+        paintStateLabel(g);
+        draw(g, (VisualCacheItem) head);
+    }
+
+    private void paintConnection(Graphics g) {
+        if (connectToSubcache) {
+            final int leftY = getTailY();
+            final int rightY = ((VisualCache) subCache).getTailY();
+
+            final int left = dimensions.x + dimensions.width;
+            final int right = ((VisualCache) subCache).dimensions.x;
+
+            final int top = Math.min(leftY, rightY);
+
+            g.setColor(connectToSubcacheColor);
+            g.drawLine(left, leftY, left, top);
+            g.drawLine(left, top, right, top);
+            g.drawLine(right, top, right, rightY);
+        }
+    }
+
+    private int getTailY() {
+        if (tail != null) {
+            return ((VisualCacheItem) tail).box.y;
+        } else {
+            return dimensions.y + dimensions.height;
+        }
+    }
+
+    private void paintLines(Graphics g) {
         int left = dimensions.x - 10;
         int right = dimensions.x + dimensions.width + 10;
 
@@ -300,7 +358,9 @@ public class VisualCache extends MRUCache {
                     right,
                     removeSpaceBorderLine);
         }
+    }
 
+    private void paintStateLabel(Graphics g) {
         g.setColor(Color.BLACK);
 
         if (tail != null) {
@@ -310,7 +370,6 @@ public class VisualCache extends MRUCache {
             g.drawString(stateLabel,
                     dimensions.x, dimensions.y + dimensions.height - 20);
         }
-        draw(g, (VisualCacheItem) head);
     }
 
     public void paintSecondLayer(Graphics g) {
