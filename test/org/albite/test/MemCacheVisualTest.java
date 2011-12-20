@@ -156,6 +156,15 @@ public class MemCacheVisualTest extends JFrame {
         cache.paintSecondLayer(g);
     }
 
+
+    @Override
+    public void repaint() {
+        final Graphics g = getBufferStrategy().getDrawGraphics();
+        paint(g);
+        g.dispose();
+        getBufferStrategy().show();
+    }
+
     class LegendItem {
         static final int LENGTH = 20;
         static final int LENGTH2 = LENGTH / 2;
@@ -211,6 +220,7 @@ public class MemCacheVisualTest extends JFrame {
 
     public static void main(String s[]) throws IOException, CacheException {
         MemCacheVisualTest visual = new MemCacheVisualTest(DIMENSIONS);
+        visual.createBufferStrategy(2);
         visual.run();
     }
 }

@@ -8,7 +8,6 @@ package org.albite.cache;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Graphics;
-import java.util.Random;
 import org.albite.cache.visual.Rect;
 
 /**
@@ -23,8 +22,14 @@ public class VisualMemCache extends MemCache {
     private final Component repaintMaster;
     private Color allItemsColor = null;
     private long currentTime;
+
+    private int localHits = 0;
+    private int globalHits = 0;
+    private int lookups = 0;
     
     String stateLabel = "";
+
+    private EfficientStringDrawer stringDrawer = new EfficientStringDrawer();
 
     public static final Color COLOR_NORMAL = Color.GRAY;
     public static final Color COLOR_JUST_ADDED = Color.GREEN;
@@ -37,8 +42,6 @@ public class VisualMemCache extends MemCache {
     public static final Color COLOR_LINE_REMOVE_UNTIL = Color.RED;
 
     private volatile int waitTime = 100;
-
-    private Random random = new Random();
 
     public VisualMemCache(
         final Cache subCache,
@@ -81,6 +84,8 @@ public class VisualMemCache extends MemCache {
 
     @Override
     public Cacheable get(Object key) {
+        lookups++;
+
         startCounting();
         stateLabel = "Getting...";
         print();
@@ -89,6 +94,8 @@ public class VisualMemCache extends MemCache {
         startCounting();
         VisualCacheItem item = (VisualCacheItem) index.get(key);
         if (item != null) {
+            localHits++;
+
             startCounting();
             stateLabel = "Found";
             print();
@@ -105,6 +112,9 @@ public class VisualMemCache extends MemCache {
 
         startCounting();
         Cacheable result = super.get(key);
+        if (result != null) {
+            globalHits++;
+        }
         returnToNormal();
         return result;
     }
@@ -307,9 +317,38 @@ public class VisualMemCache extends MemCache {
             ((VisualMemCache) subCache).paintSecondLayer(g);
         }
 
+        int height = dimensions.y + dimensions.height + 20;
+
         g.setColor(Color.WHITE);
         g.drawString(cacheLabel,
-                dimensions.x, dimensions.y + dimensions.height + 20);
+                dimensions.x, height);
+
+        final float localHitRatio = localHits / (float) lookups;
+        final int localHitRate = (int) (localHitRatio * 100);
+
+        final float globalHitRatio = globalHits / (float) lookups;
+        final int globalHitRate = (int) (globalHitRatio * 100);
+
+        final StringBuilder builder = stringDrawer.builder;
+        builder.setLength(0);
+        builder.append("Hit rate: ");
+        builder.append(localHitRate);
+        builder.append("% (");
+        builder.append(globalHitRate);
+        builder.append("%)");
+        stringDrawer.draw(g, dimensions.x, height + 20);
+    }
+
+    public static class EfficientStringDrawer {
+        public static final int BUFFER_SIZE = 200;
+        public final StringBuilder builder = new StringBuilder(BUFFER_SIZE);
+        private char[] buffer = new char[BUFFER_SIZE];
+
+        public void draw(Graphics g, int x, int y) {
+            final int length = Math.min(BUFFER_SIZE, builder.length());
+            builder.getChars(0, length, buffer, 0);
+            g.drawChars(buffer, 0, length, x, y);
+        }
     }
 
     /*
@@ -351,11 +390,6 @@ public class VisualMemCache extends MemCache {
         }
 
         void translate(final int x, final int y) {
-//            System.out.println(
-//                    "(" + box.x + ", " + box.y + ") -> ("
-//                    + (box.x + x) + ", " + (box.y + y) + ")"
-//                    + "  [" + box.width + ", " + box.height + "]");
-
             box.x += x;
             box.y += y;
         }
@@ -430,22 +464,11 @@ public class VisualMemCache extends MemCache {
             Rect rect,
             Color border, Color fill) {
 
-//        final int width = rect.width - 1;
-//        final int height = rect.height - 1;
-//        final int roundCorner = height / 3;
-
-//        g.setColor(Color.DARK_GRAY);
-//        g.fillRect(rect.x, rect.y, rect.width, rect.height);
-
         g.setColor(fill);
         g.fillRect(rect.x, rect.y, rect.width, rect.height);
-//        g.fillRoundRect(rect.x, rect.y, rect.width - 1, rect.height - 1, roundCorner, roundCorner);
-//        g.fillOval(rect.x, rect.y, rect.width, rect.height);
 
         g.setColor(border);
         g.drawRect(rect.x, rect.y, rect.width - 1, rect.height - 1);
-//        g.drawRoundRect(rect.x, rect.y, rect.width - 1, rect.height - 1, roundCorner, roundCorner);
-//        g.drawOval(rect.x, rect.y, rect.width - 1, rect.height - 1);
     }
 
     private void returnToNormal() {
@@ -469,9 +492,7 @@ public class VisualMemCache extends MemCache {
         if (haveToWait > 0) {
             try {
                 Thread.sleep(haveToWait);
-            } catch (InterruptedException e) {
-                System.out.println("WOWY?");
-            }
+            } catch (InterruptedException e) {}
         }
     }
 }
