@@ -36,10 +36,10 @@ public class MemCacheVisualTest extends JFrame {
         super("Visual Cache");
 
         Rect subCacheDimensions = new Rect(300, 80, 100, 400);
-        VisualMemCache subCache = new VisualMemCache(null, 200, 256, 500, 1000, subCacheDimensions, "Back Cache (256)", this);
+        VisualMemCache subCache = new VisualMemCache(null, 220, 256, 500, 1000, subCacheDimensions, "Back Cache (256)", this);
 
         Rect cacheDimensions = new Rect(50, 80, 100, 400);
-        cache = new VisualMemCache(subCache, 200, 256, 500, 1000, cacheDimensions, "Main Cache (80)", this);
+        cache = new VisualMemCache(subCache, 70, 100, 70, 100, cacheDimensions, "Main Cache (100)", this);
 
         WindowAdapter window =
                 new WindowAdapter() {
@@ -60,7 +60,7 @@ public class MemCacheVisualTest extends JFrame {
         final int width = getWidth();
         final int height = getHeight();
         final int cacheY = cache.dimensions.y;
-        final int cacheHeight = cache.dimensions.height;
+        final int cacheHeight = cache.dimensions.height + 1;
 
         g.setColor(Color.WHITE);
         g.fillRect(0, cacheY, width, cacheHeight);
