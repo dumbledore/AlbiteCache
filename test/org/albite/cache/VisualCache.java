@@ -5,16 +5,16 @@
 
 package org.albite.cache;
 
+import org.albite.test.Rect;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Graphics;
-import org.albite.cache.visual.Rect;
 
 /**
  *
  * @author Albus Dumbledore
  */
-public class VisualMemCache extends MemCache {
+public class VisualCache extends MRUCache {
     public final Rect dimensions;
     final int borderLine;
     int removeSpaceBorderLine = 0;
@@ -35,6 +35,7 @@ public class VisualMemCache extends MemCache {
     public static final Color COLOR_JUST_ADDED = Color.GREEN;
     public static final Color COLOR_FOUND_ITEM = Color.YELLOW;
     public static final Color COLOR_MISS = Color.BLUE;
+    public static final Color COLOR_MOVING = Color.CYAN;
     public static final Color COLOR_REMOVED = Color.RED;
     public static final Color COLOR_INVALIDATED = Color.BLACK;
     public static final Color COLOR_LINE_PHYSICAL_CAPACITY = Color.BLACK;
@@ -43,7 +44,7 @@ public class VisualMemCache extends MemCache {
 
     private volatile int waitTime = 100;
 
-    public VisualMemCache(
+    public VisualCache(
         final Cache subCache,
         final int   targetPhysicalSize,
         final int   physicalCapacity,
@@ -53,10 +54,26 @@ public class VisualMemCache extends MemCache {
         final String cacheLabel,
         final Component repaintMaster) {
 
-        super(
-                subCache,
-                targetPhysicalSize, physicalCapacity,
-                targetElementSize, elementCapacity);
+        if (targetPhysicalSize <= 0
+                || physicalCapacity <= 0
+                || targetElementSize <= 0
+                || elementCapacity <= 0) {
+
+            throw new IllegalArgumentException("sizes sould be positive");
+        }
+
+        if (targetPhysicalSize > physicalCapacity
+                || targetElementSize > elementCapacity) {
+
+            throw new IllegalArgumentException(
+                    "target cannot be > the capacity");
+        }
+
+        this.subCache           = subCache;
+        this.targetPhysicalSize = targetPhysicalSize;
+        this.physicalCapacity   = physicalCapacity;
+        this.targetElementSize  = targetElementSize;
+        this.elementCapacity    = elementCapacity;
         
         this.dimensions = dimensions;
         this.cacheLabel = cacheLabel;
@@ -72,7 +89,7 @@ public class VisualMemCache extends MemCache {
         }
 
         if (subCache != null) {
-            ((VisualMemCache) subCache).setWaitTime(waitTime);
+            ((VisualCache) subCache).setWaitTime(waitTime);
         }
         
         this.waitTime = waitTime;
@@ -86,31 +103,41 @@ public class VisualMemCache extends MemCache {
     public Cacheable get(Object key) {
         lookups++;
 
-        startCounting();
         stateLabel = "Getting...";
-        print();
         repaint();
 
-        startCounting();
         VisualCacheItem item = (VisualCacheItem) index.get(key);
         if (item != null) {
             localHits++;
 
-            startCounting();
             stateLabel = "Found";
-            print();
             item.color = COLOR_FOUND_ITEM;
             repaint();
+
+            if (item != head) {
+                stateLabel = "Moving...";
+                item.box.x += 20;
+                item.color = COLOR_MOVING;
+                repaint();
+
+                VisualCacheItem current = (VisualCacheItem) head;
+                while (current != item) {
+                    current.translate(0, - item.box.height);
+                    current = (VisualCacheItem) current.next;
+                }
+                item.box.y = dimensions.y + dimensions.height - item.box.height;
+                repaint();
+
+                item.box.x = dimensions.x;
+            }
             item.color = COLOR_NORMAL;
         } else {
-            startCounting();
             stateLabel = "Miss";
             allItemsColor = COLOR_MISS;
             repaint();
             allItemsColor = null;
         }
 
-        startCounting();
         Cacheable result = super.get(key);
         if (result != null) {
             globalHits++;
@@ -121,32 +148,25 @@ public class VisualMemCache extends MemCache {
     
     @Override
     public void put(Object key, Cacheable value) throws CacheException {
-        startCounting();
         stateLabel = "Putting...";
-        print();
         repaint();
 
-        startCounting();
         super.put(key, value);
         returnToNormal();
     }
 
     @Override
     public void invalidate(Object key) {
-        startCounting();
         VisualCacheItem item = (VisualCacheItem) index.get(key);
         
         if (item != null) {
             stateLabel = "Invalidating...";
-            print();
             repaint();
 
-            startCounting();
             item.color = COLOR_INVALIDATED;
             repaint();
 
-            startCounting();
-            translate((VisualCacheItem) item.next, 0, item.box.height - 1);
+            translate((VisualCacheItem) item.next, 0, item.box.height);
             super.invalidate(key);
             returnToNormal();
         }
@@ -154,16 +174,12 @@ public class VisualMemCache extends MemCache {
 
     @Override
     public void invalidate() {
-        startCounting();
         stateLabel = "Trashing...";
-        print();
         repaint();
 
-        startCounting();
         allItemsColor = COLOR_INVALIDATED;
         repaint();
 
-        startCounting();
         super.invalidate();
         returnToNormal();
     }
@@ -171,12 +187,9 @@ public class VisualMemCache extends MemCache {
     @Override
     protected Cacheable searchInternalCache(Object key) {
         if (subCache != null) {
-            startCounting();
             stateLabel = "Deep Searching...";
-            print();
             repaint();
 
-            startCounting();
             Cacheable result = super.searchInternalCache(key);
             returnToNormal();
             return result;
@@ -189,22 +202,18 @@ public class VisualMemCache extends MemCache {
     protected void add(Object key, Cacheable value)
             throws CacheException {
 
-        startCounting();
         stateLabel = "Adding...";
-        print();
         repaint();
 
-        startCounting();
         super.add(key, value);
 
         VisualCacheItem item = (VisualCacheItem) head;
-        final int height = item.box.height - 1;
+        final int height = item.box.height;
 
         if (head.next != null) {
             VisualCacheItem next = (VisualCacheItem) head.next;
             translate(next, 0, - height);
             repaint();
-            startCounting();
         }
 
         /*
@@ -214,7 +223,6 @@ public class VisualMemCache extends MemCache {
         item.translate(0, - height);
         repaint();
 
-        startCounting();
         item.color = COLOR_NORMAL;
         returnToNormal();
     }
@@ -228,19 +236,16 @@ public class VisualMemCache extends MemCache {
         if (spaceNeeded > physicalCapacity
                 || elementSize >= elementCapacity) {
 
-            startCounting();
             final int spaceLimit = targetPhysicalSize - additionalSpaceNeeded;
             final float ratio = spaceLimit / (float) physicalCapacity;
             removeSpaceBorderLine =
                     (int) (dimensions.height * (1.0f - ratio)) + dimensions.y;
 
             stateLabel = "Freeing up space...";
-            print();
             repaint();
 
             boolean result = super.makeFreeSpace(additionalSpaceNeeded);
             removeSpaceBorderLine = 0;
-            startCounting();
             returnToNormal();
             return result;
         }
@@ -250,17 +255,13 @@ public class VisualMemCache extends MemCache {
 
     @Override
     protected boolean remove(CacheItem item) throws CacheException {
-        startCounting();
         stateLabel = "Removing...";
-        print();
         repaint();
 
-        startCounting();
         VisualCacheItem removed = (VisualCacheItem) item;
         removed.color = COLOR_REMOVED;
         repaint();
 
-        startCounting();
         boolean result = super.remove(item);
         returnToNormal();
         return result;
@@ -271,15 +272,15 @@ public class VisualMemCache extends MemCache {
      */
     public void paint(Graphics g) {
         if (subCache != null) {
-            ((VisualMemCache) subCache).paint(g);
+            ((VisualCache) subCache).paint(g);
         }
 
-        int left = dimensions.x - 20;
-        int right = dimensions.x + dimensions.width + 20;
+        int left = dimensions.x - 10;
+        int right = dimensions.x + dimensions.width + 10;
 
         g.setColor(COLOR_LINE_PHYSICAL_CAPACITY);
         g.drawLine(
-                0,
+                left,
                 dimensions.y,
                 right,
                 dimensions.y);
@@ -314,7 +315,7 @@ public class VisualMemCache extends MemCache {
 
     public void paintSecondLayer(Graphics g) {
         if (subCache != null) {
-            ((VisualMemCache) subCache).paintSecondLayer(g);
+            ((VisualCache) subCache).paintSecondLayer(g);
         }
 
         int height = dimensions.y + dimensions.height + 20;
@@ -331,11 +332,11 @@ public class VisualMemCache extends MemCache {
 
         final StringBuilder builder = stringDrawer.builder;
         builder.setLength(0);
-        builder.append("Hit rate: ");
+        builder.append("Local hit rate: ");
         builder.append(localHitRate);
-        builder.append("% (");
+        builder.append("%   Global hit rate:");
         builder.append(globalHitRate);
-        builder.append("%)");
+        builder.append("%");
         stringDrawer.draw(g, dimensions.x, height + 20);
     }
 
@@ -403,10 +404,6 @@ public class VisualMemCache extends MemCache {
     /*
      * Helper methods
      */
-    private void print() {
-//        System.out.println(stateLabel);
-    }
-
     private static void apply(
             CacheItem head,
             ItemOperation operation) {
@@ -468,7 +465,7 @@ public class VisualMemCache extends MemCache {
         g.fillRect(rect.x, rect.y, rect.width, rect.height);
 
         g.setColor(border);
-        g.drawRect(rect.x, rect.y, rect.width - 1, rect.height - 1);
+        g.drawRect(rect.x, rect.y, rect.width, rect.height);
     }
 
     private void returnToNormal() {
@@ -478,20 +475,13 @@ public class VisualMemCache extends MemCache {
     
     private void repaint() {
         repaintMaster.repaint();
-        rest(waitTime);
+        rest();
     }
 
-    private void startCounting() {
-        currentTime = System.currentTimeMillis();
-    }
-
-    private void rest(final int millis) {
-        final long elapsed = Math.max(0, System.currentTimeMillis() - currentTime);
-        final long haveToWait = Math.max(0, millis - elapsed);
-
-        if (haveToWait > 0) {
+    private void rest() {
+        if (waitTime > 0) {
             try {
-                Thread.sleep(haveToWait);
+                Thread.sleep(waitTime);
             } catch (InterruptedException e) {}
         }
     }

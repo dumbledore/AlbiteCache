@@ -7,7 +7,9 @@ package org.albite.test;
 
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.Font;
 import java.awt.Graphics;
+import java.awt.Toolkit;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
@@ -17,8 +19,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import javax.swing.JFrame;
 import org.albite.cache.CacheException;
-import org.albite.cache.VisualMemCache;
-import org.albite.cache.visual.Rect;
+import org.albite.cache.VisualCache;
+import org.albite.cache.VisualCache.EfficientStringDrawer;
 import org.albite.test.CharCacheTest.CharData;
 import org.albite.test.CharCacheTest.CharKey;
 
@@ -26,11 +28,15 @@ import org.albite.test.CharCacheTest.CharKey;
  *
  * @author Albus Dumbledore
  */
-public class MemCacheVisualTest extends JFrame {
+public class VisualCacheTest extends JFrame {
 
     private static final String FILENAME = "alice.txt";
     private static final Dimension DIMENSIONS = new Dimension(720, 540);
+    private static final String DEFAULT_FONT_FAMILY_NAME = "sansserif";
+    private static final int DEFAULT_FONT_SIZE = 12;
+    
     private static final int[] updateTimes = {
+        0,
         9,
         10,
         20,
@@ -42,23 +48,28 @@ public class MemCacheVisualTest extends JFrame {
     };
     private int updateTimeIndex = 4;
 
+    private final Font font = createFont();
+    private int progress = 0;
+
     private int waitTime;
     private String waitTimeString;
 
-    VisualMemCache cache;
+    VisualCache cache;
     Rect areaDimensions;
 
     LegendItem[] legend;
 
-    public MemCacheVisualTest(final Dimension dimensions)
+    EfficientStringDrawer stringDrawer = new EfficientStringDrawer();
+
+    public VisualCacheTest(final Dimension dimensions)
     {
         super("Visual Cache");
 
         Rect subCacheDimensions = new Rect(300, 30, 150, 460);
-        VisualMemCache subCache = new VisualMemCache(null, 160, 200, 500, 1000, subCacheDimensions, "Back Cache (200)", this);
+        VisualCache subCache = new VisualCache(null, 160, 200, 500, 1000, subCacheDimensions, "Back Cache (200)", this);
 
         Rect cacheDimensions = new Rect(50, 260, 150, 230);
-        cache = new VisualMemCache(subCache, 80, 100, 80, 100, cacheDimensions, "Main Cache (100)", this);
+        cache = new VisualCache(subCache, 80, 100, 80, 100, cacheDimensions, "Main Cache (100)", this);
 
         updateWaitTime();
 
@@ -71,16 +82,16 @@ public class MemCacheVisualTest extends JFrame {
         int y = LegendItem.LENGTH + 20;
 
         legend = new LegendItem[] {
-            new LegendItem(true, "Neutral state",              VisualMemCache.COLOR_NORMAL,                     x, y),
-            new LegendItem(true, "Hit",                        VisualMemCache.COLOR_FOUND_ITEM,                 x, 2 * y),
-            new LegendItem(true, "Miss",                       VisualMemCache.COLOR_MISS,                       x, 3 * y),
-            new LegendItem(true, "Just added",                 VisualMemCache.COLOR_JUST_ADDED,                 x, 4 * y),
-            new LegendItem(true, "About to be removed",        VisualMemCache.COLOR_REMOVED,                    x, 5 * y),
-            new LegendItem(true, "Invalidated",                VisualMemCache.COLOR_INVALIDATED,                x, 6 * y),
+            new LegendItem(true, "Neutral state",              VisualCache.COLOR_NORMAL,                     x, y),
+            new LegendItem(true, "Hit",                        VisualCache.COLOR_FOUND_ITEM,                 x, 2 * y),
+            new LegendItem(true, "Miss",                       VisualCache.COLOR_MISS,                       x, 3 * y),
+            new LegendItem(true, "Just added",                 VisualCache.COLOR_JUST_ADDED,                 x, 4 * y),
+            new LegendItem(true, "About to be removed",        VisualCache.COLOR_REMOVED,                    x, 5 * y),
+            new LegendItem(true, "Invalidated",                VisualCache.COLOR_INVALIDATED,                x, 6 * y),
 
-            new LegendItem(false, "Physical Capacity",          VisualMemCache.COLOR_LINE_PHYSICAL_CAPACITY,    x, 8 * y),
-            new LegendItem(false, "Targeted Capacity on GC",    VisualMemCache.COLOR_LINE_TARGETED_CAPACITY,    x, 9 * y),
-            new LegendItem(false, "Items for removal",          VisualMemCache.COLOR_LINE_REMOVE_UNTIL,         x, 10 * y),
+            new LegendItem(false, "Physical Capacity",          VisualCache.COLOR_LINE_PHYSICAL_CAPACITY,    x, 8 * y),
+            new LegendItem(false, "Targeted Capacity on GC",    VisualCache.COLOR_LINE_TARGETED_CAPACITY,    x, 9 * y),
+            new LegendItem(false, "Items for removal",          VisualCache.COLOR_LINE_REMOVE_UNTIL,         x, 10 * y),
         };
 
         WindowAdapter window =
@@ -110,6 +121,20 @@ public class MemCacheVisualTest extends JFrame {
         setVisible(true);
     }
 
+    private static Font createFont() {
+        String[] fonts = Toolkit.getDefaultToolkit().getFontList();
+        String fontString = fonts[0];
+
+        for (int i = 0; i < fonts.length; i++) {
+            if (DEFAULT_FONT_FAMILY_NAME.equalsIgnoreCase(fonts[i])) {
+                fontString = fonts[i];
+                break;
+            }
+        }
+
+        return new Font(fontString, Font.PLAIN, DEFAULT_FONT_SIZE);
+    }
+
     private synchronized void updateWaitTime(final int indexOffset) {
         updateTimeIndex += indexOffset;
         updateWaitTime();
@@ -134,6 +159,8 @@ public class MemCacheVisualTest extends JFrame {
         final int width = getWidth();
         final int height = getHeight();
 
+        g.setFont(font);
+
         g.setColor(Color.WHITE);
         g.fillRect(
                 0,
@@ -152,6 +179,13 @@ public class MemCacheVisualTest extends JFrame {
         }
 
         g.drawString(waitTimeString, areaDimensions.width + 20, height - 50);
+
+        final StringBuilder builder = stringDrawer.builder;
+        builder.setLength(0);
+        builder.append("Progress: ");
+        builder.append(progress);
+        builder.append("%");
+        stringDrawer.draw(g, areaDimensions.width + 20, height - 30);
 
         cache.paintSecondLayer(g);
     }
@@ -195,23 +229,34 @@ public class MemCacheVisualTest extends JFrame {
     }
 
     private void run() throws IOException, CacheException {
-        String line;
+        final char[] chars;
+        {
+            String line;
 
-        BufferedReader r =
-                new BufferedReader(
-                new InputStreamReader(
-                getClass().getResourceAsStream(FILENAME)));
+            StringBuilder buffer = new StringBuilder();
 
-        while ((line = r.readLine())  != null) {
-            for (int i = 0; i < line.length(); i++) {
-                char c = line.charAt(i);
-                CharKey key = new CharKey(c);
-                CharData data = (CharData) cache.get(key);
+            BufferedReader r =
+                    new BufferedReader(
+                    new InputStreamReader(
+                    getClass().getResourceAsStream(FILENAME)));
 
-                if (data == null) {
-                    data = new CharData(c);
-                    cache.put(key, data);
-                }
+            while ((line = r.readLine())  != null) {
+                buffer.append(line);
+            }
+            chars = new char[buffer.length()];
+            buffer.getChars(0, chars.length, chars, 0);
+        }
+
+        for (int i = 0; i < chars.length; i++) {
+            progress = (int) ((i / (float) chars.length) * 100);
+
+            char c = chars[i];
+            CharKey key = new CharKey(c);
+            CharData data = (CharData) cache.get(key);
+
+            if (data == null) {
+                data = new CharData(c);
+                cache.put(key, data);
             }
         }
 
@@ -219,7 +264,7 @@ public class MemCacheVisualTest extends JFrame {
     }
 
     public static void main(String s[]) throws IOException, CacheException {
-        MemCacheVisualTest visual = new MemCacheVisualTest(DIMENSIONS);
+        VisualCacheTest visual = new VisualCacheTest(DIMENSIONS);
         visual.createBufferStrategy(2);
         visual.run();
     }
