@@ -8,6 +8,7 @@ package org.albite.cache;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Graphics;
+import java.util.Random;
 import org.albite.cache.visual.Rect;
 
 /**
@@ -16,16 +17,28 @@ import org.albite.cache.visual.Rect;
  */
 public class VisualMemCache extends MemCache {
     public final Rect dimensions;
+    final int borderLine;
+    int removeSpaceBorderLine = 0;
     public final String cacheLabel;
     private final Component repaintMaster;
+    private Color allItemsColor = null;
+    private long currentTime;
     
-    String stateLabel = "Working...";
+    String stateLabel = "";
 
-    private static final Color COLOR_FREE = Color.DARK_GRAY;
-    private static final Color COLOR_NORMAL = Color.GRAY;
-    private static final Color COLOR_JUST_ADDED = Color.RED;
+    public static final Color COLOR_NORMAL = Color.GRAY;
+    public static final Color COLOR_JUST_ADDED = Color.GREEN;
+    public static final Color COLOR_FOUND_ITEM = Color.YELLOW;
+    public static final Color COLOR_MISS = Color.BLUE;
+    public static final Color COLOR_REMOVED = Color.RED;
+    public static final Color COLOR_INVALIDATED = Color.BLACK;
+    public static final Color COLOR_LINE_PHYSICAL_CAPACITY = Color.BLACK;
+    public static final Color COLOR_LINE_TARGETED_CAPACITY = Color.BLUE;
+    public static final Color COLOR_LINE_REMOVE_UNTIL = Color.RED;
 
-    private static final int STANDARD_WAIT_TIME = 100;
+    private volatile int waitTime = 100;
+
+    private Random random = new Random();
 
     public VisualMemCache(
         final Cache subCache,
@@ -45,55 +58,117 @@ public class VisualMemCache extends MemCache {
         this.dimensions = dimensions;
         this.cacheLabel = cacheLabel;
         this.repaintMaster = repaintMaster;
+
+        final float ratio = targetPhysicalSize / (float) physicalCapacity;
+        this.borderLine = (int) (dimensions.height * (1.0f - ratio)) + dimensions.y;
+    }
+
+    public void setWaitTime(final int waitTime) {
+        if (waitTime < 0) {
+            throw new IllegalArgumentException();
+        }
+
+        if (subCache != null) {
+            ((VisualMemCache) subCache).setWaitTime(waitTime);
+        }
+        
+        this.waitTime = waitTime;
+    }
+
+    public int getWaitTime() {
+        return waitTime;
     }
 
     @Override
     public Cacheable get(Object key) {
+        startCounting();
         stateLabel = "Getting...";
         print();
-
-        Cacheable result = super.get(key);
         repaint();
+
+        startCounting();
+        VisualCacheItem item = (VisualCacheItem) index.get(key);
+        if (item != null) {
+            startCounting();
+            stateLabel = "Found";
+            print();
+            item.color = COLOR_FOUND_ITEM;
+            repaint();
+            item.color = COLOR_NORMAL;
+        } else {
+            startCounting();
+            stateLabel = "Miss";
+            allItemsColor = COLOR_MISS;
+            repaint();
+            allItemsColor = null;
+        }
+
+        startCounting();
+        Cacheable result = super.get(key);
+        returnToNormal();
         return result;
     }
     
     @Override
     public void put(Object key, Cacheable value) throws CacheException {
+        startCounting();
         stateLabel = "Putting...";
         print();
-
-        super.put(key, value);
         repaint();
+
+        startCounting();
+        super.put(key, value);
+        returnToNormal();
     }
 
     @Override
     public void invalidate(Object key) {
-        if (index.get(key) != null) {
+        startCounting();
+        VisualCacheItem item = (VisualCacheItem) index.get(key);
+        
+        if (item != null) {
             stateLabel = "Invalidating...";
             print();
-
-            super.invalidate(key);
             repaint();
+
+            startCounting();
+            item.color = COLOR_INVALIDATED;
+            repaint();
+
+            startCounting();
+            translate((VisualCacheItem) item.next, 0, item.box.height - 1);
+            super.invalidate(key);
+            returnToNormal();
         }
     }
 
     @Override
     public void invalidate() {
+        startCounting();
         stateLabel = "Trashing...";
         print();
-
-        super.invalidate();
         repaint();
+
+        startCounting();
+        allItemsColor = COLOR_INVALIDATED;
+        repaint();
+
+        startCounting();
+        super.invalidate();
+        returnToNormal();
     }
 
     @Override
     protected Cacheable searchInternalCache(Object key) {
         if (subCache != null) {
+            startCounting();
             stateLabel = "Deep Searching...";
             print();
-
-            Cacheable result = super.searchInternalCache(key);
             repaint();
+
+            startCounting();
+            Cacheable result = super.searchInternalCache(key);
+            returnToNormal();
             return result;
         }
 
@@ -104,9 +179,12 @@ public class VisualMemCache extends MemCache {
     protected void add(Object key, Cacheable value)
             throws CacheException {
 
+        startCounting();
         stateLabel = "Adding...";
         print();
+        repaint();
 
+        startCounting();
         super.add(key, value);
 
         VisualCacheItem item = (VisualCacheItem) head;
@@ -116,6 +194,7 @@ public class VisualMemCache extends MemCache {
             VisualCacheItem next = (VisualCacheItem) head.next;
             translate(next, 0, - height);
             repaint();
+            startCounting();
         }
 
         /*
@@ -125,8 +204,9 @@ public class VisualMemCache extends MemCache {
         item.translate(0, - height);
         repaint();
 
+        startCounting();
         item.color = COLOR_NORMAL;
-        repaint();
+        returnToNormal();
     }
 
     @Override
@@ -135,14 +215,23 @@ public class VisualMemCache extends MemCache {
 
         final int spaceNeeded = physicalSize + additionalSpaceNeeded;
 
-            if (spaceNeeded > physicalCapacity
-                    || elementSize >= elementCapacity) {
+        if (spaceNeeded > physicalCapacity
+                || elementSize >= elementCapacity) {
+
+            startCounting();
+            final int spaceLimit = targetPhysicalSize - additionalSpaceNeeded;
+            final float ratio = spaceLimit / (float) physicalCapacity;
+            removeSpaceBorderLine =
+                    (int) (dimensions.height * (1.0f - ratio)) + dimensions.y;
 
             stateLabel = "Freeing up space...";
             print();
+            repaint();
 
             boolean result = super.makeFreeSpace(additionalSpaceNeeded);
-            repaint();
+            removeSpaceBorderLine = 0;
+            startCounting();
+            returnToNormal();
             return result;
         }
 
@@ -151,11 +240,19 @@ public class VisualMemCache extends MemCache {
 
     @Override
     protected boolean remove(CacheItem item) throws CacheException {
+        startCounting();
         stateLabel = "Removing...";
         print();
-        
-        boolean result = super.remove(item);
         repaint();
+
+        startCounting();
+        VisualCacheItem removed = (VisualCacheItem) item;
+        removed.color = COLOR_REMOVED;
+        repaint();
+
+        startCounting();
+        boolean result = super.remove(item);
+        returnToNormal();
         return result;
     }
 
@@ -167,7 +264,34 @@ public class VisualMemCache extends MemCache {
             ((VisualMemCache) subCache).paint(g);
         }
 
+        int left = dimensions.x - 20;
+        int right = dimensions.x + dimensions.width + 20;
+
+        g.setColor(COLOR_LINE_PHYSICAL_CAPACITY);
+        g.drawLine(
+                0,
+                dimensions.y,
+                right,
+                dimensions.y);
+
+        g.setColor(COLOR_LINE_TARGETED_CAPACITY);
+        g.drawLine(
+                left,
+                borderLine,
+                right,
+                borderLine);
+
+        if (removeSpaceBorderLine > 0) {
+            g.setColor(COLOR_LINE_REMOVE_UNTIL);
+            g.drawLine(
+                    left,
+                    removeSpaceBorderLine,
+                    right,
+                    removeSpaceBorderLine);
+        }
+
         g.setColor(Color.BLACK);
+
         if (tail != null) {
             VisualCacheItem item = (VisualCacheItem) tail;
             g.drawString(stateLabel, item.box.x, item.box.y - 10);
@@ -209,9 +333,8 @@ public class VisualMemCache extends MemCache {
 
             final int size = value.getPhysicalSize();
             final float ratio = size / (float) physicalCapacity;
-            final int height = (int) (dimensions.height * ratio);
+            final int height = Math.max((int) (dimensions.height * ratio), 3);
 
-            // put it at top
             box = new Rect(
                     dimensions.x,
                     dimensions.y + dimensions.height,
@@ -219,9 +342,12 @@ public class VisualMemCache extends MemCache {
                     height);
         }
 
-        void draw (Graphics g) {
-            //TODO: Use some more fancy drawing
+        void draw(Graphics g) {
             drawRect(g, box, Color.BLACK, color);
+        }
+
+        void draw(Graphics g, Color c) {
+            drawRect(g, box, Color.BLACK, allItemsColor);
         }
 
         void translate(final int x, final int y) {
@@ -278,14 +404,25 @@ public class VisualMemCache extends MemCache {
             final Graphics g,
             final VisualCacheItem head) {
 
-        apply(head,
-            new ItemOperation() {
+        if (allItemsColor == null) {
+            apply(head,
+                new ItemOperation() {
 
-            @Override
-            void operate(VisualCacheItem item) {
-                item.draw(g);
-            }
-        });
+                @Override
+                void operate(VisualCacheItem item) {
+                    item.draw(g);
+                }
+            });
+        } else {
+            apply(head,
+                new ItemOperation() {
+
+                @Override
+                void operate(VisualCacheItem item) {
+                    item.draw(g, allItemsColor);
+                }
+            });
+        }
     }
     
     private static void drawRect(
@@ -293,23 +430,48 @@ public class VisualMemCache extends MemCache {
             Rect rect,
             Color border, Color fill) {
 
+//        final int width = rect.width - 1;
+//        final int height = rect.height - 1;
+//        final int roundCorner = height / 3;
+
+//        g.setColor(Color.DARK_GRAY);
+//        g.fillRect(rect.x, rect.y, rect.width, rect.height);
+
         g.setColor(fill);
         g.fillRect(rect.x, rect.y, rect.width, rect.height);
+//        g.fillRoundRect(rect.x, rect.y, rect.width - 1, rect.height - 1, roundCorner, roundCorner);
+//        g.fillOval(rect.x, rect.y, rect.width, rect.height);
 
         g.setColor(border);
         g.drawRect(rect.x, rect.y, rect.width - 1, rect.height - 1);
+//        g.drawRoundRect(rect.x, rect.y, rect.width - 1, rect.height - 1, roundCorner, roundCorner);
+//        g.drawOval(rect.x, rect.y, rect.width - 1, rect.height - 1);
+    }
+
+    private void returnToNormal() {
+        stateLabel = "";
+        repaint();
     }
     
     private void repaint() {
         repaintMaster.repaint();
-        rest(STANDARD_WAIT_TIME);
+        rest(waitTime);
     }
 
-    private static void rest(final int millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            System.out.println("WOWY?");
+    private void startCounting() {
+        currentTime = System.currentTimeMillis();
+    }
+
+    private void rest(final int millis) {
+        final long elapsed = Math.max(0, System.currentTimeMillis() - currentTime);
+        final long haveToWait = Math.max(0, millis - elapsed);
+
+        if (haveToWait > 0) {
+            try {
+                Thread.sleep(haveToWait);
+            } catch (InterruptedException e) {
+                System.out.println("WOWY?");
+            }
         }
     }
 }
