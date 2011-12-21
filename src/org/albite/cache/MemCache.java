@@ -40,7 +40,6 @@ public class MemCache extends Cache {
         this.elementCapacity    = elementCapacity;
     }
 
-    @Override
     protected CacheItem createCacheItem(Object key, Cacheable value) {
         return new MemCacheItem(key, value);
     }
@@ -53,7 +52,6 @@ public class MemCache extends Cache {
             this.value = value;
         }
 
-        @Override
         Cacheable getValue() {
             return value;
         }

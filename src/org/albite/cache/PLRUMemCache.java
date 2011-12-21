@@ -39,7 +39,6 @@ public class PLRUMemCache extends PLRUCache {
         this.elementCapacity    = elementCapacity;
     }
 
-    @Override
     protected CacheItem createCacheItem(Object key, Cacheable value) {
         return new MemCacheItem(key, value);
     }
@@ -52,7 +51,6 @@ public class PLRUMemCache extends PLRUCache {
             this.value = value;
         }
 
-        @Override
         Cacheable getValue() {
             return value;
         }
