@@ -14,7 +14,7 @@ import java.awt.Graphics;
  *
  * @author Albus Dumbledore
  */
-public class VisualCache extends MRUCache {
+public class VisualCache extends PLRUCache {
     public final Rect dimensions;
     final int borderLine;
     int removeSpaceBorderLine = 0;

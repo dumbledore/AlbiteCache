@@ -9,7 +9,7 @@ package org.albite.cache;
  *
  * @author Albus Dumbledore
  */
-public abstract class MRUCache extends Cache {
+public abstract class PLRUCache extends Cache {
     @Override
     public Cacheable get(Object key) {
         CacheItem item = (CacheItem) index.get(key);
